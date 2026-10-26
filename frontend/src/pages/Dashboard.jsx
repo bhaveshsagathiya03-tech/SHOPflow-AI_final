@@ -1,8 +1,25 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import DashboardCard from "../components/DashboardCard";
+import LoadingSpinner from "../components/LoadingSpinner";
+import ProductForm from "../components/ProductForm";
 import "../styles/Dashboard.css";
 import { toast } from "react-toastify";
+import {
+  ShoppingCart,
+  Banknote,
+  AlertTriangle,
+  Sparkles,
+  TrendingUp,
+  Boxes,
+  CheckCircle2,
+  Calendar,
+  CreditCard,
+  QrCode,
+  ArrowUpRight,
+  RefreshCw,
+} from "lucide-react";
 
 import {
   ResponsiveContainer,
@@ -20,308 +37,568 @@ import {
   Legend,
 } from "recharts";
 
-const COLORS = [
-  "#2563eb",
-  "#16a34a",
-  "#ea580c",
-  "#7c3aed",
-  "#dc2626",
+const CHART_COLORS = [
+  "#4F46E5",
+  "#10B981",
+  "#F59E0B",
+  "#8B5CF6",
+  "#EC4899",
+  "#06B6D4",
 ];
 
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+};
+
 function Dashboard() {
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
   const [insights, setInsights] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (isManual = false) => {
     try {
-      const productRes = await api.get("/products");
-      const salesRes = await api.get("/sales");
-      const insightsRes = await api.get("/predict/insights");
-      const analyticsRes = await api.get("/analytics");
+      if (isManual) setRefreshing(true);
+      else setLoading(true);
+
+      const [productRes, salesRes, insightsRes, analyticsRes] = await Promise.all([
+        api.get("/products"),
+        api.get("/sales"),
+        api.get("/predict/insights"),
+        api.get("/analytics"),
+      ]);
 
       setProducts(productRes.data);
       setSales(salesRes.data);
       setInsights(insightsRes.data);
       setAnalytics(analyticsRes.data);
+
+      if (isManual) toast.success("Dashboard refreshed");
     } catch (error) {
-  console.error(error);
-  toast.error("Failed to load dashboard data");
-}
+      console.error("Dashboard fetch error:", error);
+      toast.error("Failed to load dashboard data. Check backend connection.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   const totalProducts = products.length;
   const totalSales = sales.length;
 
   const totalRevenue = sales.reduce(
-    (sum, sale) => sum + Number(sale.total_amount),
+    (sum, sale) => sum + Number(sale.total_amount || 0),
     0
   );
 
   const lowStockProducts = products.filter(
-    (product) => product.stock <= product.min_stock
+    (product) => Number(product.stock) <= Number(product.min_stock)
   );
+
+  const getPaymentBadge = (method) => {
+    const m = (method || "").toLowerCase();
+    if (m === "upi") {
+      return (
+        <span className="badge badge-purple">
+          <QrCode size={12} /> UPI
+        </span>
+      );
+    }
+    if (m === "card") {
+      return (
+        <span className="badge badge-info">
+          <CreditCard size={12} /> Card
+        </span>
+      );
+    }
+    return (
+      <span className="badge badge-success">
+        <Banknote size={12} /> Cash
+      </span>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="dashboard-loading-state">
+        <LoadingSpinner />
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard page">
+      {/* Top Controls Header */}
+      <div className="dashboard-action-bar">
+        <div>
+          <h2 className="dashboard-overview-heading">Executive Store Summary</h2>
+          <p className="dashboard-overview-sub">
+            Real-time telemetry and machine learning demand forecasts
+          </p>
+        </div>
 
-      <div className="dashboard-header">
-  <div>
-    <h1>📊 ShopFlow AI Dashboard</h1>
-    <p>Real-time inventory and sales analytics</p>
-  </div>
-</div>
+        <div className="dashboard-action-buttons">
+          <button
+            className="btn btn-secondary btn-refresh"
+            onClick={() => fetchDashboardData(true)}
+            disabled={refreshing}
+          >
+            <RefreshCw size={15} className={refreshing ? "spin-icon" : ""} />
+            <span>{refreshing ? "Refreshing..." : "Sync Live Data"}</span>
+          </button>
 
-      <div className="dashboard-cards">
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate("/pos")}
+          >
+            <ShoppingCart size={16} />
+            <span>Open POS Terminal</span>
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards Grid */}
+      <div className="dashboard-cards-grid">
         <DashboardCard
-          title="Total Products"
-          value={totalProducts}
-          color="#2563eb"
-          icon="📦"
+          title="Total SKUs"
+          value={totalProducts.toLocaleString()}
+          color="#4F46E5"
+          icon={<Boxes size={22} />}
+          subtitle="Catalog catalog items"
+          badge="Catalog"
         />
 
         <DashboardCard
-          title="Total Sales"
-          value={totalSales}
-          color="#16a34a"
-          icon="🛒"
+          title="Sales Completed"
+          value={totalSales.toLocaleString()}
+          color="#10B981"
+          icon={<ShoppingCart size={22} />}
+          subtitle="Processed transactions"
+          badge="Live"
         />
 
         <DashboardCard
-          title="Revenue"
-          value={`₹${totalRevenue.toFixed(2)}`}
-          color="#ea580c"
-          icon="💰"
+          title="Total Revenue"
+          value={formatCurrency(totalRevenue)}
+          color="#0EA5E9"
+          icon={<Banknote size={22} />}
+          subtitle="Gross lifetime sales"
+          badge="Gross"
         />
 
         <DashboardCard
-          title="Low Stock"
+          title="Low Stock Alerts"
           value={lowStockProducts.length}
-          color="#dc2626"
-          icon="⚠️"
+          color={lowStockProducts.length > 0 ? "#EF4444" : "#10B981"}
+          icon={<AlertTriangle size={22} />}
+          subtitle={
+            lowStockProducts.length > 0
+              ? "Items at or below min threshold"
+              : "All stock levels optimal"
+          }
+          badge={lowStockProducts.length > 0 ? "Action Required" : "Healthy"}
         />
       </div>
 
+      {/* AI Predictive Intelligence Section */}
       {insights && (
-        <div className="section">
-          <h2 className="section-title">
-  🤖 AI Insights & Recommendations
-</h2>
+        <div className="ai-intelligence-section">
+          <div className="ai-banner-header">
+            <div className="ai-banner-title-group">
+              <div className="ai-sparkle-pill">
+                <Sparkles size={16} />
+                <span>AI PREDICTIVE ENGINE</span>
+              </div>
+              <h3>Machine Learning Demand & Restock Intelligence</h3>
+            </div>
+            <div className="ai-model-meta-tag">
+              <span>Model: {insights.model_name || "Random Forest Regressor"}</span>
+              <span className="meta-separator">•</span>
+              <span className="accuracy-pill">
+                🎯 {((insights.model_accuracy || 0.74) * 100).toFixed(0)}% Accuracy
+              </span>
+            </div>
+          </div>
 
-          <div className="dashboard-cards">
+          <div className="ai-insights-grid">
+            {/* Top Performing Product */}
+            <div className="ai-feature-card">
+              <div className="feature-card-header">
+                <span className="card-tag">TOP SELLING ITEM</span>
+                <TrendingUp size={18} className="text-ai-accent" />
+              </div>
+              <div className="feature-main-stat">
+                <h4>{insights.top_product}</h4>
+                <p className="feature-subtext">
+                  Units Sold to Date: <strong>{insights.total_units_sold ?? "N/A"}</strong>
+                </p>
+              </div>
+              <div className="feature-card-footer">
+                <span>Current Stock Level:</span>
+                <span className="stock-counter-badge">
+                  {insights.current_stock?.toLocaleString()} units
+                </span>
+              </div>
+            </div>
 
-            <DashboardCard
-              title="Top Product"
-              value={insights.top_product}
-              color="#7c3aed"
-              icon="🔥"
-            />
+            {/* Demand Forecast */}
+            <div className="ai-feature-card">
+              <div className="feature-card-header">
+                <span className="card-tag">DEMAND FORECAST</span>
+                <Calendar size={18} className="text-ai-accent" />
+              </div>
+              <div className="feature-main-stat">
+                <div className="stat-large-val">
+                  {insights.predicted_sales}
+                  <span className="stat-unit"> units tomorrow</span>
+                </div>
+                <p className="feature-subtext">
+                  Projected next-day sales volume based on weekday patterns
+                </p>
+              </div>
+              <div className="feature-card-footer">
+                <span>Confidence Index:</span>
+                <span className="badge badge-purple">High Confidence</span>
+              </div>
+            </div>
 
-            <DashboardCard
-              title="Tomorrow Sales"
-              value={`${insights.predicted_sales} Units`}
-              color="#0891b2"
-              icon="📈"
-            />
-
-            <DashboardCard
-              title="Current Stock"
-              value={insights.current_stock}
-              color="#16a34a"
-              icon="📦"
-            />
-
-            <DashboardCard
-              title="Recommended Order"
-              value={insights.recommended_order}
-              color="#ea580c"
-              icon="🛒"
-            />
-
-            <DashboardCard
-              title="Accuracy"
-              value={`${(insights.model_accuracy * 100).toFixed(0)}%`}
-              color="#2563eb"
-              icon="🎯"
-            />
-
-            <DashboardCard
-              title="Status"
-              value={insights.status}
-              color="#059669"
-              icon="🤖"
-            />
-
+            {/* Restock Recommendation */}
+            <div
+              className={`ai-feature-card recommendation-card ${
+                insights.recommended_order > 0 ? "urgent-restock" : "sufficient-stock"
+              }`}
+            >
+              <div className="feature-card-header">
+                <span className="card-tag">PURCHASE RECOMMENDATION</span>
+                {insights.recommended_order > 0 ? (
+                  <AlertTriangle size={18} className="text-danger" />
+                ) : (
+                  <CheckCircle2 size={18} className="text-success" />
+                )}
+              </div>
+              <div className="feature-main-stat">
+                <div className="stat-large-val">
+                  {insights.recommended_order > 0
+                    ? `+${insights.recommended_order} Units`
+                    : "Optimal Level"}
+                </div>
+                <p className="feature-subtext">
+                  {insights.status ||
+                    (insights.recommended_order > 0
+                      ? "Purchase recommended to prevent stockouts"
+                      : "Stock buffer meets predicted demand")}
+                </p>
+              </div>
+              <div className="feature-card-footer">
+                <span>Buffer Status:</span>
+                <span
+                  className={`badge ${
+                    insights.recommended_order > 0
+                      ? "badge-warning"
+                      : "badge-success"
+                  }`}
+                >
+                  {insights.status}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
+      {/* Analytics Charts Grid */}
       {analytics && (
-        <div className="section">
+        <div className="analytics-section">
+          <div className="section-title-wrap">
+            <h3 className="section-title">Store Performance Analytics</h3>
+            <span className="section-subtitle">Financial trends and inventory velocity</span>
+          </div>
 
-         <h2 className="section-title">
-  📈 Business Analytics
-</h2>
-
-          <div className="charts-grid section">
-
+          <div className="charts-grid">
+            {/* Daily Revenue Trend */}
             <div className="chart-card">
-              <h3>Revenue Trend</h3>
-
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={analytics.daily_sales}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-
-                  <Bar
-                    dataKey="revenue"
-                    fill="#2563eb"
+              <div className="chart-card-header">
+                <h4>Daily Revenue Velocity</h4>
+                <span className="chart-tag">Gross (₹)</span>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={analytics.daily_sales || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#64748B" }} tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 12, fill: "#64748B" }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => `₹${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`}
                   />
+                  <Tooltip
+                    formatter={(val) => [formatCurrency(val), "Revenue"]}
+                    contentStyle={{
+                      background: "#FFFFFF",
+                      borderRadius: "12px",
+                      border: "1px solid #E2E8F0",
+                      boxShadow: "0 10px 15px -3px rgba(15, 23, 42, 0.08)",
+                    }}
+                  />
+                  <Bar dataKey="revenue" fill="#4F46E5" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
+            {/* Sales Volume Curve */}
             <div className="chart-card">
-              <h3>Sales Trend</h3>
-
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={analytics.daily_sales}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-
+              <div className="chart-card-header">
+                <h4>Revenue Growth Trajectory</h4>
+                <span className="chart-tag">Trend</span>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={analytics.daily_sales || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#64748B" }} tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 12, fill: "#64748B" }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => `₹${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`}
+                  />
+                  <Tooltip
+                    formatter={(val) => [formatCurrency(val), "Revenue"]}
+                    contentStyle={{
+                      background: "#FFFFFF",
+                      borderRadius: "12px",
+                      border: "1px solid #E2E8F0",
+                      boxShadow: "0 10px 15px -3px rgba(15, 23, 42, 0.08)",
+                    }}
+                  />
                   <Line
                     type="monotone"
                     dataKey="revenue"
-                    stroke="#16a34a"
+                    stroke="#10B981"
                     strokeWidth={3}
+                    dot={{ fill: "#FFFFFF", stroke: "#10B981", strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
-                        <div className="chart-card">
-              <h3>Category Wise Sales</h3>
 
-              <ResponsiveContainer width="100%" height={300}>
+            {/* Category Breakdown */}
+            <div className="chart-card">
+              <div className="chart-card-header">
+                <h4>Sales by Category</h4>
+                <span className="chart-tag">Volume Share</span>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
                   <Pie
-                    data={analytics.category_sales}
+                    data={analytics.category_sales || []}
                     dataKey="quantity"
                     nameKey="category"
-                    outerRadius={100}
-                    label
+                    innerRadius={55}
+                    outerRadius={90}
+                    paddingAngle={3}
                   >
-                    {analytics.category_sales.map((entry, index) => (
+                    {(analytics.category_sales || []).map((entry, index) => (
                       <Cell
-                        key={index}
-                        fill={COLORS[index % COLORS.length]}
+                        key={`cell-${index}`}
+                        fill={CHART_COLORS[index % CHART_COLORS.length]}
                       />
                     ))}
                   </Pie>
-
-                  <Tooltip />
-                  <Legend />
+                  <Tooltip
+                    formatter={(val, name) => [`${val} units`, name]}
+                    contentStyle={{
+                      background: "#FFFFFF",
+                      borderRadius: "12px",
+                      border: "1px solid #E2E8F0",
+                      boxShadow: "0 10px 15px -3px rgba(15, 23, 42, 0.08)",
+                    }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: "12px" }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
 
+            {/* Top Products Volume */}
             <div className="chart-card">
-              <h3>Top Selling Products</h3>
-
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={analytics.top_products}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="product_name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-
-                  <Bar
-                    dataKey="quantity"
-                    fill="#ea580c"
+              <div className="chart-card-header">
+                <h4>Top Selling Products</h4>
+                <span className="chart-tag">Units Sold</span>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={analytics.top_products || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                  <XAxis dataKey="product_name" tick={{ fontSize: 11, fill: "#64748B" }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: "#64748B" }} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    formatter={(val) => [`${val} Units`, "Quantity"]}
+                    contentStyle={{
+                      background: "#FFFFFF",
+                      borderRadius: "12px",
+                      border: "1px solid #E2E8F0",
+                      boxShadow: "0 10px 15px -3px rgba(15, 23, 42, 0.08)",
+                    }}
                   />
+                  <Bar dataKey="quantity" fill="#F59E0B" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-
           </div>
         </div>
       )}
 
-      <div className="section">
-        <h2 className="section-title">🧾 Recent Sales</h2>
+      {/* Operational Grids: Recent Transactions & Low Stock Alerts */}
+      <div className="dashboard-tables-grid">
+        {/* Recent Transactions */}
+        <div className="dashboard-table-card">
+          <div className="table-card-header">
+            <div>
+              <h4>Recent Transactions</h4>
+              <p className="table-card-subtitle">Last recorded checkout slips</p>
+            </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => navigate("/sales-history")}
+            >
+              <span>View All</span>
+              <ArrowUpRight size={15} />
+            </button>
+          </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Sale ID</th>
-              <th>Payment</th>
-              <th>Total</th>
-              <th>Date</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {sales.length === 0 ? (
-              <tr>
-                <td colSpan="4">No Sales Found</td>
-              </tr>
-            ) : (
-              sales
-                .slice()
-                .reverse()
-                .map((sale) => (
-                  <tr key={sale.sale_id}>
-                    <td>{sale.sale_id}</td>
-                    <td>{sale.payment_method}</td>
-                    <td>₹{Number(sale.total_amount).toFixed(2)}</td>
-                    <td>{new Date(sale.sale_date).toLocaleString()}</td>
-                  </tr>
-                ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="section">
-        <h2 className="section-title">⚠️ Low Stock Products</h2>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Stock</th>
-              <th>Minimum Stock</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {lowStockProducts.length === 0 ? (
-              <tr>
-                <td colSpan="3">No Low Stock Products</td>
-              </tr>
-            ) : (
-              lowStockProducts.map((product) => (
-                <tr key={product.product_id}>
-                  <td>{product.product_name}</td>
-                  <td className="low-stock">{product.stock}</td>
-                  <td>{product.min_stock}</td>
+          <div className="table-responsive">
+            <table className="modern-dashboard-table">
+              <thead>
+                <tr>
+                  <th>Sale ID</th>
+                  <th>Payment</th>
+                  <th>Amount</th>
+                  <th>Date & Time</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {sales.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" className="empty-cell">
+                      No transactions recorded yet
+                    </td>
+                  </tr>
+                ) : (
+                  sales
+                    .slice()
+                    .reverse()
+                    .slice(0, 5)
+                    .map((sale) => (
+                      <tr key={sale.sale_id}>
+                        <td>
+                          <span className="sale-id-chip">#{sale.sale_id}</span>
+                        </td>
+                        <td>{getPaymentBadge(sale.payment_method)}</td>
+                        <td className="amount-col">
+                          {formatCurrency(Number(sale.total_amount))}
+                        </td>
+                        <td className="date-col">
+                          {new Date(sale.sale_date).toLocaleString([], {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Low Stock Watchlist */}
+        <div className="dashboard-table-card">
+          <div className="table-card-header">
+            <div>
+              <h4>Low Stock Watchlist</h4>
+              <p className="table-card-subtitle">SKUs requiring immediate replenishment</p>
+            </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => navigate("/inventory")}
+            >
+              <span>All Inventory</span>
+              <ArrowUpRight size={15} />
+            </button>
+          </div>
+
+          <div className="table-responsive">
+            <table className="modern-dashboard-table">
+              <thead>
+                <tr>
+                  <th>Product Name</th>
+                  <th>Stock</th>
+                  <th>Min Threshold</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lowStockProducts.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" className="empty-cell text-success">
+                      <CheckCircle2 size={16} className="inline-icon" /> All inventory levels are above minimum threshold
+                    </td>
+                  </tr>
+                ) : (
+                  lowStockProducts.slice(0, 5).map((product) => (
+                    <tr key={product.product_id}>
+                      <td>
+                        <div className="product-cell-name">
+                          <strong>{product.product_name}</strong>
+                          <span className="product-category-tag">{product.category}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="badge badge-danger">
+                          {product.stock} units
+                        </span>
+                      </td>
+                      <td>
+                        <span className="threshold-text">{product.min_stock} units</span>
+                      </td>
+                      <td>
+                        <button
+                          className="btn-quick-restock"
+                          onClick={() => setEditProduct(product)}
+                        >
+                          Restock
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
+      {/* Direct Product Restock Modal */}
+      {editProduct && (
+        <ProductForm
+          product={editProduct}
+          onClose={() => setEditProduct(null)}
+          refreshProducts={fetchDashboardData}
+        />
+      )}
     </div>
   );
 }

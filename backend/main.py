@@ -5,6 +5,8 @@ from database import engine, get_db
 from models import Base, Sale
 from routers.predict import router as predict_router
 from routers.analytics import router as analytics_router
+from routers.delivery import router as delivery_router, _to_delivery_response
+from routers.reports import router as reports_router
 
 
 from schemas import (
@@ -28,12 +30,18 @@ from crud import (
 )
 
 
-app = FastAPI()
+app = FastAPI(title="ShopFlow API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -43,6 +51,8 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 app.include_router(predict_router)
 app.include_router(analytics_router)
+app.include_router(delivery_router)
+app.include_router(reports_router)
 
 
 # =========================
@@ -216,8 +226,10 @@ def make_sale(
     try:
         db_sale = create_sale(
             db,
-            sale.payment_method,
-            validated_items
+            payment_method=sale.payment_method,
+            validated_items=validated_items,
+            order_type=sale.order_type,
+            delivery_info=sale.delivery_info
         )
 
     except Exception:
@@ -229,32 +241,45 @@ def make_sale(
         )
 
     # Step 3: Build response
-    return SaleResponse(
-        sale_id=db_sale.sale_id,
-        user_id=db_sale.user_id,
-        total_amount=db_sale.total_amount,
-        payment_method=db_sale.payment_method,
-        sale_date=db_sale.sale_date,
-        items=[
-            SaleItemResponse.model_validate(si)
-            for si in db_sale.sale_items
-        ]
-    )
+    return _to_sale_response(db_sale)
 
 
 # =========================
 # BILLING - SALES HISTORY
 # =========================
 
+def _to_sale_item_response(si) -> SaleItemResponse:
+    product_name = (
+        si.product.product_name
+        if si.product
+        else ("Archived Item" if si.product_id is None else f"Product #{si.product_id}")
+    )
+    return SaleItemResponse(
+        sale_item_id=si.sale_item_id,
+        product_id=si.product_id,
+        product_name=product_name,
+        quantity=si.quantity,
+        unit_price=si.unit_price,
+        subtotal=si.subtotal
+    )
+
+
 def _to_sale_response(db_sale: Sale) -> SaleResponse:
+    delivery_res = None
+    if db_sale.delivery:
+        delivery_res = _to_delivery_response(db_sale.delivery)
+
     return SaleResponse(
         sale_id=db_sale.sale_id,
         user_id=db_sale.user_id,
         total_amount=db_sale.total_amount,
         payment_method=db_sale.payment_method,
+        payment_status=db_sale.payment_status or "PAID",
+        order_type=db_sale.order_type or "IN_STORE",
         sale_date=db_sale.sale_date,
+        delivery=delivery_res,
         items=[
-            SaleItemResponse.model_validate(si)
+            _to_sale_item_response(si)
             for si in db_sale.sale_items
         ]
     )
